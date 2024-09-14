@@ -1,0 +1,160 @@
+# .github/workflows/build-macos.yml
+
+name: Build macOS App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+
+    env:
+      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}  # Add your email username in GitHub Secrets
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}  # Add your email password in GitHub Secrets
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'  # Specify the Python version
+
+      - name: Cache Python Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            venv/lib/python3.9/site-packages
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Dependencies
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Lint Code
+        run: |
+          source venv/bin/activate
+          pip install flake8
+          flake8 InfiniteStorageFace.py
+
+      - name: Static Code Analysis
+        run: |
+          source venv/bin/activate
+          pip install bandit
+          bandit -r InfiniteStorageFace.py
+
+      - name: Run Unit Tests
+        run: |
+          source venv/bin/activate
+          python -m unittest discover tests
+
+      - name: Download and Convert Icon
+        run: |
+          mkdir -p assets/icons
+          curl -L -o assets/icons/icon.png https://cdn-icons-png.flaticon.com/512/1055/1055687.png
+          mkdir -p icon.iconset
+          sips -z 16 16     assets/icons/icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32     assets/icons/icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     assets/icons/icon.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64     assets/icons/icon.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   assets/icons/icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256   assets/icons/icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   assets/icons/icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512   assets/icons/icon.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   assets/icons/icon.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 assets/icons/icon.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o assets/icons/icon.icns
+          rm -rf icon.iconset
+
+      - name: Package Application
+        run: |
+          source venv/bin/activate
+          pyinstaller --onefile --windowed --icon=assets/icons/icon.icns InfiniteStorageFace.py
+          mkdir -p InfiniteStorageFace.app/Contents/MacOS
+          cp dist/InfiniteStorageFace InfiniteStorageFace.app/Contents/MacOS/InfiniteStorageFace
+          
+          # Create Info.plist
+          cat <<EOF > InfiniteStorageFace.app/Contents/Info.plist
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" 
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>CFBundleName</key>
+            <string>InfiniteStorageFace</string>
+            <key>CFBundleDisplayName</key>
+            <string>InfiniteStorageFace</string>
+            <key>CFBundleExecutable</key>
+            <string>InfiniteStorageFace</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.yourusername.InfiniteStorageFace</string>
+            <key>CFBundleVersion</key>
+            <string>1.0</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleIconFile</key>
+            <string>icon.icns</string>
+        </dict>
+        </plist>
+        EOF
+
+          # Copy the icon to the .app bundle
+          mkdir -p InfiniteStorageFace.app/Contents/Resources
+          cp assets/icons/icon.icns InfiniteStorageFace.app/Contents/Resources/icon.icns
+
+          # Clean up PyInstaller build files
+          echo "Cleaning up temporary files..."
+          rm -rf build dist/InfiniteStorageFace InfiniteStorageFace.spec
+
+          echo "✅ Application packaged successfully! Locate the .app bundle in the 'InfiniteStorageFace.app' directory."
+
+      - name: Upload macOS App
+        uses: actions/upload-artifact@v3
+        with:
+          name: InfiniteStorageFace-macOS
+          path: InfiniteStorageFace.app
+
+      - name: Release to GitHub Releases
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: InfiniteStorageFace.app
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.example.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "InfiniteStorageFace macOS Build Successful"
+          body: "The macOS build for InfiniteStorageFace was successful. The .app bundle is available as a GitHub artifact and released."
+          to: user@example.com
+          from: "InfiniteStorageFace <noreply@infiniteStorageFace.com>"
+
+      - name: Notify on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.example.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "InfiniteStorageFace macOS Build Failed"
+          body: "The macOS build for InfiniteStorageFace has failed. Please check the GitHub Actions logs for more details."
+          to: user@example.com
+          from: "InfiniteStorageFace <noreply@infiniteStorageFace.com>"

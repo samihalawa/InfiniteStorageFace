@@ -3,13 +3,14 @@
 import os
 import gradio as gr
 from huggingface_hub import HfApi, upload_folder, create_repo, list_repo_files
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 import queue
 from plyer import notification  # For desktop notifications
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 import time
 import re
+import json
 
 # Initialize Rich console for logging
 console = Console()
@@ -23,8 +24,14 @@ log_queue = queue.Queue()
 # Event to signal upload cancellation
 cancel_event = Event()
 
+# Lock for thread-safe operations
+upload_lock = Lock()
+
 # Regular expression for validating repository ID
 REPO_ID_REGEX = re.compile(r"^[a-zA-Z0-9\-_.]+/[a-zA-Z0-9\-_.]+$")
+
+# Maximum retry attempts for uploads
+MAX_RETRIES = 3
 
 # Function to send desktop notifications
 def send_notification(title, message, timeout=5):
@@ -56,43 +63,43 @@ def log(message):
 def authenticate(token):
     if not token:
         log("❌ Hugging Face Token is required.")
-        return "❌ Hugging Face Token is required."
+        return False, "❌ Hugging Face Token is required."
     try:
         api.login(token)
         log("✅ Authenticated successfully!")
-        return "✅ Authenticated successfully!"
+        return True, "✅ Authenticated successfully!"
     except Exception as e:
         log(f"❌ Authentication failed: {e}")
-        return f"❌ Authentication failed: {e}"
+        return False, f"❌ Authentication failed: {e}"
 
 # Function to validate repository ID format
 def validate_repo_id(repo_id):
     if not REPO_ID_REGEX.match(repo_id):
         log("❌ Repository ID must be in the format 'username/repo-name'.")
-        return False
-    return True
+        return False, "❌ Repository ID must be in the format 'username/repo-name'."
+    return True, "✅ Repository ID format is valid."
 
 # Function to create repository if it doesn't exist
 def create_repo_if_not_exists(repo_id, token, repo_type="dataset", private=False):
     if not repo_id:
         log("❌ Repository ID is required.")
-        return "❌ Repository ID is required."
+        return False, "❌ Repository ID is required."
     try:
         # Check if repository exists by listing its files
         api.list_repo_files(repo_id=repo_id, repo_type=repo_type, token=token)
         log(f"✅ Repository '{repo_id}' exists. Proceeding with upload...")
-        return f"✅ Repository '{repo_id}' exists. Proceeding with upload..."
+        return True, f"✅ Repository '{repo_id}' exists. Proceeding with upload..."
     except Exception:
         # If repository does not exist, create it
         try:
             create_repo(repo_id=repo_id, token=token, private=private, repo_type=repo_type, exist_ok=True)
             log(f"✅ Created new repository: '{repo_id}'.")
-            return f"✅ Created new repository: '{repo_id}'."
+            return True, f"✅ Created new repository: '{repo_id}'."
         except Exception as create_err:
             log(f"❌ Failed to create repository '{repo_id}': {create_err}")
-            return f"❌ Failed to create repository '{repo_id}': {create_err}"
+            return False, f"❌ Failed to create repository '{repo_id}': {create_err}"
 
-# Function to upload files to Hugging Face repository
+# Function to upload files to Hugging Face repository with retries
 def upload_files(folder_path, repo_id, token, private=False, threads=5):
     if cancel_event.is_set():
         log("❌ Upload has been cancelled.")
@@ -107,69 +114,77 @@ def upload_files(folder_path, repo_id, token, private=False, threads=5):
     if not repo_id:
         log("❌ Repository ID is required.")
         return "❌ Repository ID is required."
-    if not validate_repo_id(repo_id):
-        return "❌ Invalid Repository ID format."
+    if not validate_repo_id(repo_id)[0]:
+        return validate_repo_id(repo_id)[1]
     if not token:
         log("❌ Hugging Face Token is required.")
         return "❌ Hugging Face Token is required."
 
     def upload_process():
-        try:
-            # Step 1: Authenticate
-            auth_message = authenticate(token)
-            if "❌" in auth_message:
-                return
+        with upload_lock:
+            try:
+                # Step 1: Authenticate
+                success, auth_message = authenticate(token)
+                if not success:
+                    return
 
-            # Step 2: Create repository if it doesn't exist
-            creation_message = create_repo_if_not_exists(repo_id, token, repo_type="dataset", private=private)
-            if "❌" in creation_message:
-                return
+                # Step 2: Create repository if it doesn't exist
+                success, creation_message = create_repo_if_not_exists(repo_id, token, repo_type="dataset", private=private)
+                if not success:
+                    return
 
-            # Step 3: Start upload using upload_folder with multi_commits for large uploads
-            log("🚀 Initiating upload...")
-            future = upload_folder(
-                folder_path=folder_path,
-                repo_id=repo_id,
-                repo_type="dataset",
-                token=token,
-                ignore_patterns=["**/.git/**", "**/logs/*.txt"],
-                multi_commits=True,
-                multi_commits_verbose=True,
-                run_as_future=True
-            )
+                # Step 3: Initialize upload parameters
+                upload_params = {
+                    "folder_path": folder_path,
+                    "repo_id": repo_id,
+                    "repo_type": "dataset",
+                    "token": token,
+                    "ignore_patterns": ["**/.git/**", "**/logs/*.txt"],
+                    "multi_commits": True,
+                    "multi_commits_verbose": True,
+                    "run_as_future": True
+                }
 
-            log("🔄 Upload started in the background. You can continue using the app.")
+                # Step 4: Start upload
+                log("🚀 Starting upload process...")
+                future = upload_folder(**upload_params)
 
-            # Step 4: Monitor upload progress
-            with Progress(
-                TextColumn("[bold blue]{task.description}"),
-                BarColumn(),
-                TransferSpeedColumn(),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                upload_task = progress.add_task("Uploading...", total=100)  # Dummy total for visualization
-                while not future.done():
-                    if cancel_event.is_set():
-                        log("❌ Upload cancellation requested.")
-                        # Note: huggingface_hub does not support cancelling uploads directly
-                        # This is a placeholder to show where cancellation logic would go
-                        break
-                    if future.exception():
-                        log(f"❌ Upload failed: {future.exception()}")
-                        break
-                    # Increment dummy progress
-                    progress.advance(upload_task, advance=1)
-                    # Sleep briefly to simulate progress (since actual progress isn't tracked)
-                    time.sleep(0.1)
-                else:
-                    if future.result():
-                        log("✅ Upload completed successfully!")
+                log("🔄 Upload started in the background. You can continue using the app.")
+
+                # Step 5: Monitor upload progress
+                with Progress(
+                    TextColumn("[bold blue]{task.description}"),
+                    BarColumn(),
+                    TransferSpeedColumn(),
+                    TimeRemainingColumn(),
+                    console=console,
+                ) as progress:
+                    upload_task = progress.add_task("Uploading...", total=100)  # Dummy total for visualization
+                    retries = 0
+                    while not future.done():
+                        if cancel_event.is_set():
+                            log("❌ Upload cancellation requested.")
+                            break
+                        if future.exception():
+                            if retries < MAX_RETRIES:
+                                retries += 1
+                                log(f"❌ Upload failed: {future.exception()}. Retrying ({retries}/{MAX_RETRIES})...")
+                                future = upload_folder(**upload_params)
+                                continue
+                            else:
+                                log(f"❌ Upload failed after {MAX_RETRIES} retries: {future.exception()}")
+                                break
+                        # Increment dummy progress
+                        progress.advance(upload_task, advance=1)
+                        # Sleep briefly to simulate progress
+                        time.sleep(0.1)
                     else:
-                        log("❌ Upload failed without exception.")
-
-        except Exception as e:
-            log(f"❌ An unexpected error occurred during upload: {e}")
+                        if future.result():
+                            log("✅ Upload completed successfully!")
+                        else:
+                            log("❌ Upload failed without exception.")
+            except Exception as e:
+                log(f"❌ An unexpected error occurred during upload: {e}")
 
     # Start the upload process in a separate thread to keep the UI responsive
     upload_thread = Thread(target=upload_process, daemon=True)
@@ -317,7 +332,7 @@ def create_interface():
         5. **Start Upload**: Click to begin uploading your files. Monitor progress in the Logs tab.
         6. **Cancel Upload**: Click to cancel the ongoing upload if needed.
         """)
-    
+
     return app
 
 # Launch the Gradio app

@@ -12,6 +12,10 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    env:
+      EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}  # Add your email username in GitHub Secrets
+      EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}  # Add your email password in GitHub Secrets
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
@@ -19,7 +23,17 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.9'  # Specify the Python version
+
+      - name: Cache Python Dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            C:\Users\runneradmin\AppData\Local\pip\Cache
+            venv\Lib\site-packages
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
 
       - name: Install Dependencies
         run: |
@@ -28,22 +42,75 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download Icon
+      - name: Lint Code
+        run: |
+          venv\Scripts\activate
+          pip install flake8
+          flake8 InfiniteStorageFace.py
+
+      - name: Static Code Analysis
+        run: |
+          venv\Scripts\activate
+          pip install bandit
+          bandit -r InfiniteStorageFace.py
+
+      - name: Run Unit Tests
+        run: |
+          venv\Scripts\activate
+          python -m unittest discover tests
+
+      - name: Download and Convert Icon
         run: |
           mkdir assets\icons
-          powershell -Command "Invoke-WebRequest -Uri 'https://cdn-icons-png.flaticon.com/512/1055/1055687.png' -OutFile 'assets\icons\icon.png'"
-          # Convert PNG to ICO using ImageMagick
+          curl -L -o assets\icons\icon.png https://cdn-icons-png.flaticon.com/512/1055/1055687.png
+          # Convert PNG to ICO using ImageMagick (ensure ImageMagick is installed)
+          choco install imagemagick -y
           magick convert assets\icons\icon.png -resize 256x256 assets\icons\icon.ico
 
       - name: Package Application
         run: |
           venv\Scripts\activate
-          pyinstaller --onefile --windowed --icon=assets\icons\icon.ico InfiniteStorageFace.py
-          # No need to manually create .app, just keep the .exe
-          rm -rf build dist\InfiniteStorageFace\ InfiniteStorageFace.spec
+          pyinstaller --onefile --windowed --icon=assets/icons/icon.ico InfiniteStorageFace.py
+          echo "Packaging application..."
+          # No need to create .app equivalent on Windows
+          echo "✅ Application packaged successfully! Locate the .exe in the 'dist' directory."
 
       - name: Upload Windows App
         uses: actions/upload-artifact@v3
         with:
           name: InfiniteStorageFace-Windows
           path: dist\InfiniteStorageFace.exe
+
+      - name: Release to GitHub Releases
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist\InfiniteStorageFace.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Notify on Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.example.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "InfiniteStorageFace Windows Build Successful"
+          body: "The Windows build for InfiniteStorageFace was successful. The .exe file is available as a GitHub artifact and released."
+          to: user@example.com
+          from: "InfiniteStorageFace <noreply@infiniteStorageFace.com>"
+
+      - name: Notify on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.example.com
+          server_port: 587
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "InfiniteStorageFace Windows Build Failed"
+          body: "The Windows build for InfiniteStorageFace has failed. Please check the GitHub Actions logs for more details."
+          to: user@example.com
+          from: "InfiniteStorageFace <noreply@infiniteStorageFace.com>"
