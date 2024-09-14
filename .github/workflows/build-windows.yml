@@ -1,0 +1,49 @@
+# .github/workflows/build-windows.yml
+
+name: Build Windows App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          python -m venv venv
+          venv\Scripts\activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download Icon
+        run: |
+          mkdir assets\icons
+          powershell -Command "Invoke-WebRequest -Uri 'https://cdn-icons-png.flaticon.com/512/1055/1055687.png' -OutFile 'assets\icons\icon.png'"
+          # Convert PNG to ICO using ImageMagick
+          magick convert assets\icons\icon.png -resize 256x256 assets\icons\icon.ico
+
+      - name: Package Application
+        run: |
+          venv\Scripts\activate
+          pyinstaller --onefile --windowed --icon=assets\icons\icon.ico InfiniteStorageFace.py
+          # No need to manually create .app, just keep the .exe
+          rm -rf build dist\InfiniteStorageFace\ InfiniteStorageFace.spec
+
+      - name: Upload Windows App
+        uses: actions/upload-artifact@v3
+        with:
+          name: InfiniteStorageFace-Windows
+          path: dist\InfiniteStorageFace.exe
