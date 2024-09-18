@@ -1,6 +1,13 @@
 # InfiniteStorageFace
 
 🚀 **InfiniteStorageFace** is a user-friendly application designed to effortlessly upload large datasets to Hugging Face with real-time feedback and progress tracking. Whether you're a data scientist, researcher, or developer, InfiniteStorageFace simplifies the process of managing and sharing your datasets.
+<img width="847" alt="Screenshot 2024-09-18 at 23 16 40" src="https://github.com/user-attachments/assets/4ea37042-5b9a-4d67-b678-a0f6ab1adf00">
+
+
+<img width="911" alt="Screenshot 2024-09-18 at 23 16 02" src="https://github.com/user-attachments/assets/142da7f6-74b4-4d9f-8e81-b016c0af0564">
+
+<img width="832" alt="Screenshot 2024-09-18 at 23 19 10" src="https://github.com/user-attachments/assets/08aea0de-5335-45d7-934b-043fb614e5c6">
+
 
 ## 🌟 Features
 
