@@ -1,3 +1,9 @@
+---
+title: InfiniteStorageFace
+app_file: app.py
+sdk: gradio
+sdk_version: 4.43.0
+---
 # InfiniteStorageFace
 
 🚀 **InfiniteStorageFace** is a user-friendly application designed to effortlessly upload large datasets to Hugging Face with real-time feedback and progress tracking. Whether you're a data scientist, researcher, or developer, InfiniteStorageFace simplifies the process of managing and sharing your datasets.

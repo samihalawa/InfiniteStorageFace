@@ -1,0 +1,36 @@
+[2024-09-19 02:30:00,987] INFO: HTTP Request: GET https://api.gradio.app/gradio-messaging/en "HTTP/1.1 200 OK"
+[2024-09-19 02:32:34,904] INFO: HTTP Request: GET http://127.0.0.1:7860/startup-events "HTTP/1.1 200 OK"
+[2024-09-19 02:32:34,953] INFO: Found credentials in shared credentials file: ~/.aws/credentials
+[2024-09-19 02:32:35,110] INFO: HTTP Request: GET https://checkip.amazonaws.com/ "HTTP/1.1 200 "
+[2024-09-19 02:32:35,564] INFO: HTTP Request: HEAD http://127.0.0.1:7860/ "HTTP/1.1 200 OK"
+[2024-09-19 02:32:35,953] INFO: HTTP Request: GET https://api.gradio.app/pkg-version "HTTP/1.1 200 OK"
+[2024-09-19 02:33:26,723] INFO: Starting upload for folder: /Users/samihalawa/git/BACKUP_WORKERS
+[2024-09-19 02:33:26,947] INFO: ⚠️ Repository 'luigi12345/megacursos0' does not exist. Creating repository...
+[2024-09-19 02:33:27,412] INFO: ✅ Repository 'luigi12345/megacursos0' created successfully.
+[2024-09-19 02:33:27,415] INFO: Cloning repository 'luigi12345/megacursos0' into 'megacursos0'...
+[2024-09-19 02:33:27,417] ERROR: Error uploading folder '/Users/samihalawa/git/BACKUP_WORKERS': 'str' object has no attribute 'client'
+Traceback (most recent call last):
+  File "/Users/samihalawa/git/InfiniteStorageFace/app4.py", line 93, in upload_single_folder
+    Repository.clone_from(repo_id, repo_path, token=token)
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 114, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/site-packages/huggingface_hub/repository.py", line 652, in clone_from
+    hub_url = self.client.endpoint
+              ^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'client'
+[2024-09-19 02:34:48,001] INFO: Starting upload for folder: /Users/samihalawa/git/BACKUP_WORKERS
+[2024-09-19 02:34:48,420] INFO: ✅ Repository 'luigi12345/megacursos0' exists. Proceeding with upload...
+[2024-09-19 02:34:48,423] INFO: Cloning repository 'luigi12345/megacursos0' into 'megacursos0'...
+[2024-09-19 02:34:48,424] ERROR: Error uploading folder '/Users/samihalawa/git/BACKUP_WORKERS': 'str' object has no attribute 'client'
+Traceback (most recent call last):
+  File "/Users/samihalawa/git/InfiniteStorageFace/app4.py", line 93, in upload_single_folder
+    Repository.clone_from(repo_id, repo_path, token=token)
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/site-packages/huggingface_hub/utils/_validators.py", line 114, in _inner_fn
+    return fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/site-packages/huggingface_hub/repository.py", line 652, in clone_from
+    hub_url = self.client.endpoint
+              ^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'client'
+[2024-09-19 02:35:10,733] INFO: Keyboard interruption detected. Shutting down gracefully...

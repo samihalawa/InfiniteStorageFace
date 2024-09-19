@@ -1,3 +1,6 @@
+# InfiniteStorageFace.py
+# Requirements: pip install gradio huggingface_hub rich python-dotenv
+
 import os
 import gradio as gr
 from huggingface_hub import (
@@ -122,40 +125,59 @@ def has_files_to_upload(folder_path, ignore_patterns):
                 return True
     return False
 
+# Function to check for sensitive data
+def contains_sensitive_data(folder_path):
+    sensitive_keywords = ["API_KEY", "SECRET", "TOKEN"]
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            with open(os.path.join(root, file), 'r') as f:
+                content = f.read()
+                if any(keyword in content for keyword in sensitive_keywords):
+                    return True
+    return False
+
 # Function to upload a single folder
 def upload_single_folder(folder_path, repo_id, token, repo_type, private, path_in_repo):
-            # Define ignore patterns
-            ignore_patterns = [
-                "**/.DS_Store",
-                "**/node_modules/**",  # Ignore node_modules folder
-                "**/.cache/**",        # Ignore .cache folders
-            ]
-        
-            # Check if there are files to upload
-            if not has_files_to_upload(folder_path, ignore_patterns):
-                log(f"⚠️ No files to upload in '{folder_path}' after applying ignore patterns. Skipping...")
-                return
-        
-            upload_params = {
-                "folder_path": folder_path,
-                "repo_id": repo_id,
-                "repo_type": repo_type,
-                "token": token,
-                "path_in_repo": path_in_repo,
-                "ignore_patterns": ignore_patterns,
-                "multi_commits": True,
-                "multi_commits_verbose": True,
-            }
-        
-            log(f"🚀 Uploading folder '{folder_path}' to '{path_in_repo}' in repository '{repo_id}'...")
-            try:
-                upload_folder(**upload_params)
-                log(f"✅ Upload completed for '{folder_path}'!")
-            except Exception as upload_err:
-                log(f"❌ Upload failed for '{folder_path}': {upload_err}")
+    # Define minimal ignore patterns
+    ignore_patterns = [
+        "**/.DS_Store",
+    ]
+
+    # Validate repository ID format
+    if not validate_repo_id(repo_id)[0]:
+        log("❌ Invalid repository ID format. Upload aborted.")
+        return
+
+    # Check if the folder exists
+    if not os.path.isdir(folder_path):
+        log(f"❌ The folder path '{folder_path}' does not exist.")
+        return
+
+    # Check if there are files to upload
+    if not has_files_to_upload(folder_path, ignore_patterns):
+        log(f"⚠️ No files to upload in '{folder_path}' after applying ignore patterns. Skipping...")
+        return
+
+    upload_params = {
+        "folder_path": folder_path,
+        "repo_id": repo_id,  # Correct repo_id without subfolders
+        "repo_type": repo_type,
+        "token": token,
+        "path_in_repo": path_in_repo,  # Specify target path in repo
+        "ignore_patterns": ignore_patterns,
+        "multi_commits": True,
+        "multi_commits_verbose": True,
+    }
+
+    log(f"🚀 Uploading folder '{folder_path}' to '{path_in_repo}' in repository '{repo_id}'...")
+    try:
+        upload_folder(**upload_params)
+        log(f"✅ Upload completed for '{folder_path}'!")
+    except Exception as upload_err:
+        log(f"❌ Upload failed for '{folder_path}': {upload_err}")
 
 # Function to upload files to Hugging Face repository
-def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_type, process_individually):
+def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_type):
     if cancel_event.is_set():
         log("❌ Upload has been cancelled.")
         return "❌ Upload has been cancelled."
@@ -168,6 +190,14 @@ def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_
     if not validate_repo_id(repo_id)[0] or not token:
         return "❌ Repository ID and Hugging Face Token are required."
 
+    # Check if there are files to upload only once
+    if not os.listdir(folder_path):
+        log(f"⚠️ No files to upload in '{folder_path}'. Skipping...")
+        return
+
+    # Prepare upload parameters
+    target_path = subfolder.replace("\\", "/") if subfolder else ""
+    
     # Authenticate and create repository if necessary
     success, auth_message = authenticate(token)
     if not success:
@@ -177,48 +207,27 @@ def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_
     if not success:
         return creation_message
 
-    # Determine target path for uploads
-    target_path = subfolder.replace("\\", "/") if subfolder else ""
+    # Use upload_folder for the entire folder upload
+    upload_params = {
+        "folder_path": folder_path,
+        "repo_id": repo_id,
+        "repo_type": repo_type,
+        "token": token,
+        "path_in_repo": target_path,  # Directly specify the path in repo
+        "ignore_patterns": ["**/.DS_Store"],
+        "multi_commits": True,
+        "multi_commits_verbose": True,
+    }
 
-    # Upload the entire folder or its subfolders using upload_folder
-    if process_individually:
-        for item in os.listdir(folder_path):
-            item_path = os.path.join(folder_path, item)
-            if os.path.isdir(item_path):  # Only process directories
-                log(f"🚀 Uploading folder '{item_path}' to '{target_path}/{item}' in repository '{repo_id}'...")
-                try:
-                    upload_folder(
-                        folder_path=item_path,
-                        repo_id=repo_id,
-                        repo_type=repo_type,
-                        token=token,
-                        path_in_repo=f"{target_path}/{item}",
-                        ignore_patterns=["**/.DS_Store"],
-                        multi_commits=True,
-                        multi_commits_verbose=True,
-                    )
-                    log(f"✅ Upload completed for '{item_path}'!")
-                except Exception as upload_err:
-                    log(f"❌ Upload failed for '{item_path}': {upload_err}")
-    else:
-        log(f"🚀 Uploading folder '{folder_path}' to '{target_path}' in repository '{repo_id}'...")
-        try:
-            upload_folder(
-                folder_path=folder_path,
-                repo_id=repo_id,
-                repo_type=repo_type,
-                token=token,
-                path_in_repo=target_path,
-                ignore_patterns=["**/.DS_Store"],
-                multi_commits=True,
-                multi_commits_verbose=True,
-            )
-            log(f"✅ Upload completed for '{folder_path}'!")
-        except Exception as upload_err:
-            log(f"❌ Upload failed for '{folder_path}': {upload_err}")
+    log(f"🚀 Uploading folder '{folder_path}' to '{target_path}' in repository '{repo_id}'...")
+    try:
+        upload_folder(**upload_params)
+        log(f"✅ Upload completed for '{folder_path}'!")
+    except Exception as upload_err:
+        log(f"❌ Upload failed for '{folder_path}': {upload_err}")
 
     return "🚀 Upload completed. Check the logs for details."
-    
+
 # Function to get tree structure of a local folder
 def get_local_tree(folder_path):
     if not os.path.isdir(folder_path):
@@ -235,6 +244,7 @@ def get_local_tree(folder_path):
             tree[f"{sub_indent}📄 {f}"] = {}
     return "\n".join(tree.keys())
 
+# Function to get tree structure of a remote repository
 # Function to get tree structure of a remote repository
 def get_remote_tree(repo_id, token, subfolder, repo_type):
     try:
@@ -256,8 +266,7 @@ def get_remote_tree(repo_id, token, subfolder, repo_type):
             return lines
         return "\n".join(build_tree(tree))
     except Exception as e:
-        return f"❌ Failed to fetch remote tree: {e}"
-
+        log(f"❌ Failed to fetch remote tree: {e}")
 # Function to refresh remote tree
 def refresh_remote(repo_id, token, subfolder, repo_type):
     return get_remote_tree(repo_id, token, subfolder, repo_type)
@@ -283,98 +292,105 @@ def create_interface():
         gr.Markdown("**Effortlessly upload your files to Hugging Face repositories with real-time feedback and progress tracking!**")
 
         with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("## Upload Section")
-                token = gr.Textbox(
-                    label="Hugging Face Token",
-                    type="password",
-                    placeholder="Enter your Hugging Face API token",
-                    value=SAMPLE_TOKEN,
-                    interactive=True,
-                    max_lines=1,
-                    scale=2,
-                )
+            token = gr.Textbox(
+                label="Hugging Face Token",
+                type="password",
+                placeholder="Enter your Hugging Face API token",
+                value=SAMPLE_TOKEN,
+                interactive=True,
+                max_lines=1,
+                scale=2,
+            )
 
-                repo_type = gr.Dropdown(
-                    label="Repository Type",
-                    choices=["space", "model", "dataset"],
-                    value="space",
-                    interactive=True,
-                    scale=1,
-                )
+            repo_type = gr.Dropdown(
+                label="Repository Type",
+                choices=["space", "model", "dataset"],
+                value="space",
+                interactive=True,
+                scale=1,
+            )
 
-                repo_id = gr.Textbox(
-                    label="Repository ID",
-                    placeholder="e.g., username/repo-name",
-                    value=SAMPLE_REPO_ID,
-                    interactive=True,
-                    lines=1,
-                    scale=3,
-                )
+        with gr.Row():
+            repo_id = gr.Textbox(
+                label="Repository ID",
+                placeholder="e.g., username/repo-name",
+                value=SAMPLE_REPO_ID,
+                interactive=True,
+                lines=1,
+                scale=3,
+            )
 
-                private = gr.Checkbox(
-                    label="Make Repository Private",
-                    value=False,
-                    interactive=True,
-                    scale=1,
-                )
+            private = gr.Checkbox(
+                label="Make Repository Private",
+                value=False,
+                interactive=True,
+                scale=1,
+            )
 
-                folder_path = gr.Textbox(
-                    label="Folder Path to Upload",
-                    placeholder="Enter the absolute path to your folder",
-                    value=SAMPLE_FOLDER_PATH,
-                    interactive=True,
-                    lines=1,
-                    scale=3,
-                )
+        with gr.Row():
+            folder_path = gr.Textbox(
+                label="Folder Path to Upload",
+                placeholder="Enter the absolute path to your folder",
+                value=SAMPLE_FOLDER_PATH,
+                interactive=True,
+                lines=1,
+                scale=3,
+            )
 
-                subfolder = gr.Textbox(
-                    label="Subfolder in Repository (Optional)",
-                    placeholder="e.g., data/uploads",
-                    value="",
-                    interactive=True,
-                    lines=1,
-                    scale=2,
-                )
+            subfolder = gr.Textbox(
+                label="Subfolder in Repository (Optional)",
+                placeholder="e.g., data/uploads",
+                value="",
+                interactive=True,
+                lines=1,
+                scale=2,
+            )
 
-                threads = gr.Slider(
-                    label="Number of Threads",
-                    minimum=1,
-                    maximum=20,
-                    step=1,
-                    value=SAMPLE_THREADS,
-                    interactive=True,
-                    scale=1,
-                )
+        with gr.Row():
+            threads = gr.Slider(
+                label="Number of Threads",
+                minimum=1,
+                maximum=20,
+                step=1,
+                value=SAMPLE_THREADS,
+                interactive=True,
+                scale=1,
+            )
 
-                process_individually = gr.Checkbox(
-                    label="Process First-Level Folders Individually",
-                    value=False,
-                    interactive=True,
-                    scale=1,
-                )
+            process_individually = gr.Checkbox(
+                label="Process First-Level Folders Individually",
+                value=False,
+                interactive=True,
+                scale=1,
+            )
 
-                upload_button = gr.Button("Start Upload", variant="primary", interactive=True)
-                cancel_button = gr.Button("Cancel Upload", variant="secondary", interactive=True)
+        with gr.Row():
+            upload_button = gr.Button("Start Upload", variant="primary", interactive=True)
+            cancel_button = gr.Button("Cancel Upload", variant="secondary", interactive=True)
 
-            with gr.Column(scale=1):
-                gr.Markdown("## Status Section")
-                upload_status = gr.Textbox(label="Upload Status", lines=1, interactive=False, value="Idle", scale=3)
+        with gr.Row():
+            upload_status = gr.Textbox(label="Upload Status", lines=1, interactive=False, value="Idle", scale=3)
 
-                with gr.Tab("Logs"):
-                    log_output = gr.Textbox(label="Upload Logs", lines=15, interactive=False, placeholder="Logs will appear here...")
-                    log_refresh = gr.Button("Refresh Logs", interactive=True)
+        with gr.Tab("Logs"):
+            with gr.Row():
+                log_output = gr.Textbox(label="Upload Logs", lines=15, interactive=False, placeholder="Logs will appear here...")
+                log_refresh = gr.Button("Refresh Logs", interactive=True)
 
-                with gr.Tab("Repository Trees"):
+        with gr.Tab("Repository Trees"):
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### Local Folder Structure")
                     local_tree = gr.Textbox(value=get_local_tree(SAMPLE_FOLDER_PATH), lines=20, interactive=False, placeholder="Local folder tree will appear here...")
                     local_refresh = gr.Button("Refresh Local Tree", interactive=True)
 
+                with gr.Column(scale=1):
+                    gr.Markdown("### Remote Repository Structure")
                     remote_tree = gr.Textbox(value=get_remote_tree(SAMPLE_REPO_ID, SAMPLE_TOKEN, "", "space"), lines=20, interactive=False, placeholder="Remote repository tree will appear here...")
                     remote_refresh = gr.Button("Refresh Remote Tree", interactive=True)
 
-                with gr.Tab("Documentation"):
-                    gr.Markdown(
-                        """
+        with gr.Tab("Documentation"):
+            gr.Markdown(
+                """
 ### **Storage Focused Documentation**
 
 1. **Hugging Face Token**: Obtain your API token from your [Hugging Face account settings](https://huggingface.co/settings/tokens).
@@ -407,7 +423,7 @@ def create_interface():
 
 **Note:** Ensure that your files do not contain sensitive information such as API keys or tokens. Files detected with sensitive information may cause upload failures.
 """
-                    )
+            )
 
         # Define the upload button click event
         upload_button.click(
