@@ -1,3 +1,6 @@
+# InfiniteStorageFace.py
+# Requirements: pip install gradio huggingface_hub rich python-dotenv
+
 import os
 import gradio as gr
 from huggingface_hub import (
@@ -59,6 +62,13 @@ SAMPLE_THREADS = 5
 # Shared log list
 shared_logs = []
 
+# Centralized ignore patterns
+IGNORE_PATTERNS = [
+    "**/.DS_Store",
+    "**/node_modules/**",  # Ignore node_modules folder
+    "**/.cache/**",        # Ignore .cache folders
+]
+
 # Function to log messages
 def log(message):
     timestamp = time.strftime("[%Y-%m-%d %H:%M:%S]")
@@ -111,48 +121,41 @@ def create_repo_if_not_exists(repo_id, token, repo_type="space", private=False):
             return False, f"❌ Failed to create repository '{repo_id}': {create_err}"
 
 # Function to check if there are files to upload after applying ignore patterns
-def has_files_to_upload(folder_path, ignore_patterns):
+def has_files_to_upload(folder_path):
     for root, dirs, files in os.walk(folder_path):
         # Apply ignore patterns to directories
-        dirs[:] = [d for d in dirs if not any(re.match(pattern.replace("**/", ""), os.path.relpath(os.path.join(root, d), folder_path) + "/") for pattern in ignore_patterns)]
+        dirs[:] = [d for d in dirs if not any(re.match(pattern.replace("**/", ""), os.path.relpath(os.path.join(root, d), folder_path) + "/") for pattern in IGNORE_PATTERNS)]
         # Check if any files are left after applying ignore patterns
         for file in files:
             relative_path = os.path.relpath(os.path.join(root, file), folder_path)
-            if not any(re.match(pattern.replace("**/", ""), relative_path) for pattern in ignore_patterns):
+            if not any(re.match(pattern.replace("**/", ""), relative_path) for pattern in IGNORE_PATTERNS):
                 return True
     return False
 
 # Function to upload a single folder
 def upload_single_folder(folder_path, repo_id, token, repo_type, private, path_in_repo):
-            # Define ignore patterns
-            ignore_patterns = [
-                "**/.DS_Store",
-                "**/node_modules/**",  # Ignore node_modules folder
-                "**/.cache/**",        # Ignore .cache folders
-            ]
-        
-            # Check if there are files to upload
-            if not has_files_to_upload(folder_path, ignore_patterns):
-                log(f"⚠️ No files to upload in '{folder_path}' after applying ignore patterns. Skipping...")
-                return
-        
-            upload_params = {
-                "folder_path": folder_path,
-                "repo_id": repo_id,
-                "repo_type": repo_type,
-                "token": token,
-                "path_in_repo": path_in_repo,
-                "ignore_patterns": ignore_patterns,
-                "multi_commits": True,
-                "multi_commits_verbose": True,
-            }
-        
-            log(f"🚀 Uploading folder '{folder_path}' to '{path_in_repo}' in repository '{repo_id}'...")
-            try:
-                upload_folder(**upload_params)
-                log(f"✅ Upload completed for '{folder_path}'!")
-            except Exception as upload_err:
-                log(f"❌ Upload failed for '{folder_path}': {upload_err}")
+    # Check if there are files to upload
+    if not has_files_to_upload(folder_path):
+        log(f"⚠️ No files to upload in '{folder_path}' after applying ignore patterns. Skipping...")
+        return
+    
+    upload_params = {
+        "folder_path": folder_path,
+        "repo_id": repo_id,
+        "repo_type": repo_type,
+        "token": token,
+        "path_in_repo": path_in_repo,
+        "ignore_patterns": IGNORE_PATTERNS,
+        "multi_commits": True,
+        "multi_commits_verbose": True,
+    }
+
+    log(f"🚀 Uploading folder '{folder_path}' to '{path_in_repo}' in repository '{repo_id}'...")
+    try:
+        upload_folder(**upload_params)
+        log(f"✅ Upload completed for '{folder_path}'!")
+    except Exception as upload_err:
+        log(f"❌ Upload failed for '{folder_path}': {upload_err}")
 
 # Function to upload files to Hugging Face repository
 def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_type, process_individually):
@@ -186,39 +189,13 @@ def upload_files(folder_path, repo_id, token, private, threads, subfolder, repo_
             item_path = os.path.join(folder_path, item)
             if os.path.isdir(item_path):  # Only process directories
                 log(f"🚀 Uploading folder '{item_path}' to '{target_path}/{item}' in repository '{repo_id}'...")
-                try:
-                    upload_folder(
-                        folder_path=item_path,
-                        repo_id=repo_id,
-                        repo_type=repo_type,
-                        token=token,
-                        path_in_repo=f"{target_path}/{item}",
-                        ignore_patterns=["**/.DS_Store"],
-                        multi_commits=True,
-                        multi_commits_verbose=True,
-                    )
-                    log(f"✅ Upload completed for '{item_path}'!")
-                except Exception as upload_err:
-                    log(f"❌ Upload failed for '{item_path}': {upload_err}")
+                upload_single_folder(item_path, repo_id, token, repo_type, private, f"{target_path}/{item}")
     else:
         log(f"🚀 Uploading folder '{folder_path}' to '{target_path}' in repository '{repo_id}'...")
-        try:
-            upload_folder(
-                folder_path=folder_path,
-                repo_id=repo_id,
-                repo_type=repo_type,
-                token=token,
-                path_in_repo=target_path,
-                ignore_patterns=["**/.DS_Store"],
-                multi_commits=True,
-                multi_commits_verbose=True,
-            )
-            log(f"✅ Upload completed for '{folder_path}'!")
-        except Exception as upload_err:
-            log(f"❌ Upload failed for '{folder_path}': {upload_err}")
+        upload_single_folder(folder_path, repo_id, token, repo_type, private, target_path)
 
     return "🚀 Upload completed. Check the logs for details."
-    
+
 # Function to get tree structure of a local folder
 def get_local_tree(folder_path):
     if not os.path.isdir(folder_path):
