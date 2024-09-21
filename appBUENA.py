@@ -1,7 +1,7 @@
 # InfiniteStorageFace.py
 
 # Requirements:
-#pip install gradio huggingface_hub rich streamlit
+# pip install gradio huggingface_hub rich python-dotenv
 
 import os
 import gradio as gr
@@ -10,17 +10,16 @@ from rich.console import Console
 from rich.logging import RichHandler
 import logging
 import time
-# import dotenv
+import dotenv
 import shutil
 from pathlib import Path
 
 # Load environment variables
-# dotenv.load_dotenv()
+dotenv.load_dotenv()
 
 # Default values
-DEFAULT_REPO = os.getenv("DEFAULT_REPO", "luigi12345/megacursos-master-999")
-DEFAULT_LOCAL_PATH = os.getenv("DEFAULT_LOCAL_PATH", "/Users/samihalawa/Documents/Megacursos/MEGACURSOS_S3_MASTER")
-token="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"
+DEFAULT_REPO = os.getenv("DEFAULT_REPO", "luigi12345/megacursos1")
+DEFAULT_LOCAL_PATH = os.getenv("DEFAULT_LOCAL_PATH", "/Users/samihalawa/git/BACKUP_IMAGES-main")
 
 # Initialize Rich console for logging
 console = Console()
@@ -245,7 +244,7 @@ def create_interface():
                     label="Hugging Face Token",
                     type="password",
                     placeholder="Enter your Hugging Face API token",
-                    value="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",  # Remove prefilled sample token for security
+                    value="",  # Remove prefilled sample token for security
                     interactive=True,
                     lines=1,
                 )
