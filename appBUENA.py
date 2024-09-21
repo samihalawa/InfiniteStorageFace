@@ -1,7 +1,7 @@
 # InfiniteStorageFace.py
 
 # Requirements:
-#pip install gradio huggingface_hub rich streamlit
+# pip install gradio huggingface_hub rich python-dotenv
 
 import os
 import gradio as gr
